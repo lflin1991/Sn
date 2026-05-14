@@ -1,0 +1,77 @@
+# ============================================
+# Sn Solid-Liquid Coexistence Simulation
+# ============================================
+
+units           metal  
+dimension       3
+boundary        p p p
+atom_style      atomic 
+timestep        0.001   # 1 fs
+read_data solid.data
+mass            1 118.71
+
+
+# ---------- Potential ----------
+pair_style      deepmd graph.pb
+pair_coeff      * *
+
+neighbor        1.0 bin
+neigh_modify    delay 0 every 1 check yes
+
+# ---------- Define regions ----------
+variable        zmid equal ((zlo+zhi)/2.0-0.1)
+
+region          lower block INF INF INF INF INF ${zmid} units box
+region          upper block INF INF INF INF ${zmid} INF units box
+
+group           solid region lower
+group           liquid region upper
+
+# ---------- Initial velocities ----------
+velocity        all create 480.0 12345 mom yes rot yes dist gaussian
+restart  50000 restart.*.dat 
+
+
+# ---------- Step 1: Equilibrate solid ----------
+fix 1 all npt temp 480 480 0.1 iso 0.0 0.0 1.0
+
+thermo          1000
+thermo_style    custom step temp pe etotal press pxx pyy pzz vol density
+
+dump            d1 all custom 10000 eq.lammpstrj id type x y z 
+
+run             50000
+
+unfix           1
+undump          d1
+# ---------- Step 2: Melt upper half ----------
+fix freeze solid setforce 0.0 0.0 0.0
+#velocity solid set 0.0 0.0 0.0
+
+fix 2 liquid nvt temp 800 800 0.1 
+
+dump            d2 all custom 10000 melt_half.lammpstrj id type x y z
+run             100000
+
+unfix           2
+undump          d2
+# ---------- Step 3: Coexist at melting temperature ----------
+# Now use NPT on ALL atoms to allow volume adjustment
+unfix freeze   # VERY IMPORTANT
+
+fix 3 all npt temp 505 505 0.1 x 0.0 0.0 1.0 y 0.0 0.0 1.0 z 0.0 0.0 1.0 couple none
+
+dump            d3 all custom 1000 coexist.lammpstrj id type x y z
+run             100000
+
+unfix           3
+undump          d3
+
+# -------------------------------
+# Output equilibrated liquid
+# -------------------------------
+write_data      liquid_solid_sn.data
+
+# =====================================
+# End
+# =====================================
