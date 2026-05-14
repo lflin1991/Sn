@@ -1,0 +1,55 @@
+# ============================================
+# Sn Solid-Liquid Coexistence Simulation
+# ============================================
+
+units           metal  
+dimension       3
+boundary        p p p
+atom_style      atomic 
+timestep        0.001   # 1 fs
+read_data       melt_half_sn.data
+mass            1 118.71
+
+
+# ---------- Potential ----------
+pair_style      deepmd graph.pb
+pair_coeff      * *
+
+neighbor        1.0 bin
+neigh_modify    delay 0 every 1 check yes
+
+restart  100000 restart_1.*.dat
+
+thermo          1000
+thermo_style    custom step temp pe etotal press pxx pyy pzz vol density lx ly lz
+
+# ---------- Define regions ----------
+variable        zmid equal ((zlo+zhi)/2.0-0.1)
+
+region          lower block INF INF INF INF INF ${zmid} units box
+region          upper block INF INF INF INF ${zmid} INF units box
+
+group           solid region lower
+group           liquid region upper
+
+# ---------- Initial velocities ----------
+velocity        all create TTT 12345 mom yes rot yes dist gaussian
+
+# ---------- Step 3: Coexist at melting temperature ----------
+# Now use NPT on ALL atoms to allow volume adjustment aniso_z
+
+fix 3 all npt temp TTT TTT 0.1 z 0.0 0.0 1.0 couple none
+dump            d3 all custom 1000 coexist.lammpstrj id type x y z
+run             200000
+
+unfix           3
+undump          d3
+
+# -------------------------------
+# Output 
+# -------------------------------
+write_data      final.data
+
+# =====================================
+# End
+# =====================================
